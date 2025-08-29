@@ -1,0 +1,66 @@
+# ==================================================
+# Analog Chip Layout Generation - Configuration
+# ==================================================
+
+# --- 輸出路徑設定 ---
+path_settings:
+  # production.ipynb 的輸出目錄，存放未經處理的原始佈局檔案
+  raw_output_directory: "raw_layouts"
+  # format_for_ml.py 的輸出目錄，存放格式化後的最終檔案
+  ml_ready_output_directory: "dataset_ml_ready"
+
+  image_subdirectory: "images"
+  json_subdirectory: "json_data"
+
+# --- 根元件 (Level 0) 設定 ---
+Level_0:
+  w_range: [100, 120]
+  h_range: [100, 120]
+
+# --- 第一層級 (Level 1) 分割與對齊規則 ---
+Level_1:
+  w_h_ratio_bound: [0.1667, 6.0]      # 允許的元件長寬比範圍 (1/6, 6/1)
+  max_tries_per_orientation: 50
+  num_splits_range: [2, 5]            # 分割數量範圍
+  ratio_range: [0.3, 1.0]             # 分割比例範圍
+  split_only_probability: 0.5         # 只進行分割而不對齊的機率
+  align_scale_factor_range: [0.2, 1.0] # 對齊時的縮放因子範圍
+  force_align_threshold: 3            # 當分割數超過此值時，強制進行對齊
+
+# --- 第二層級 (Level 2) 智慧分割規則 ---
+Level_2:
+  large_component_align_probability: 1.0
+  wide_threshold: 2.0                 # 長寬比大於此值視為「寬」元件
+  tall_threshold: 0.5                 # 長寬比小於此值視為「高」元件
+  size_thresholds: [0.1, 0.4]         # 元件面積佔總面積比例的「小」與「大」的閾值
+  small_component_hold_probability: 0.8 # 小元件不被分割的機率
+  w_h_ratio_bound: [0.1667, 6.0]
+  max_tries: 50
+  ratio_grid_probability: 0.5
+  ratio_range: [0.3, 0.6]
+  large_component_hold_probability: 0.7 # 大元件不被分割的機率
+  simple_split_probability: 0.9         # 採用簡單線性切割的機率
+  num_splits_range: [2, 4]              # 線性切割的數量範圍
+
+# --- 間隙填補 (GapFiller) 設定 ---
+GapFiller:
+  small_comp_w_range: [6, 14]       # 填補元件的寬度範圍
+  small_comp_h_range: [6, 14]       # 填補元件的高度範圍
+  spacing: 0.5                        # 填補元件之間的間距
+
+# --- Netlist 產生器設定 ---
+NetlistGenerator:
+  pin_dist_alpha: 2.5
+  min_pins_per_comp: 2
+  max_pins_per_comp: 50
+  edge_scale_param: 15.0
+  edge_gamma_multiplier: 0.05
+  max_edge_prob: 0.9
+
+# --- 主執行流程 (main_execution) 參數 ---
+main_execution:
+  num_layouts_to_generate: 5
+  output_file_basename: "raw_layout"
+  num_gaps_to_fill: 25                # 嘗試填補的元件數量
+  gap_filler_activation_threshold: 0.2 
+  output_title: "Raw Layout"
