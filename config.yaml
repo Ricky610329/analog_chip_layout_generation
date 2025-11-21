@@ -14,10 +14,15 @@ path_settings:
   image_subdirectory: "images"
   json_subdirectory: "json_data"
 
+# --- ML 資料前處理設定 ---
+ml_preparation:
+  # 定義全域畫布大小，這將對應到正規化後的 [-1, 1] 範圍
+  target_canvas_dim: 1000.0
+
 # --- 根元件 (Level 0) 設定 ---
 Level_0:
-  w_range: [100, 120]
-  h_range: [100, 120]
+  w_range: [600, 900]
+  h_range: [600, 900]
 
 # --- 第一層級 (Level 1) 分割與對齊規則 ---
 Level_1:
@@ -50,9 +55,9 @@ Level_2:
 
 # --- 間隙填補 (GapFiller) 設定 ---
 GapFiller:
-  small_comp_w_range: [6, 14]       # 填補元件的寬度範圍
-  small_comp_h_range: [6, 14]       # 填補元件的高度範圍
-  spacing: 0.5                        # 填補元件之間的間距
+  small_comp_w_range: [45, 65]       # 填補元件的寬度範圍
+  small_comp_h_range: [45, 65]       # 填補元件的高度範圍
+  spacing: 2.0                        # 填補元件之間的間距
 
 # --- Netlist 產生器設定 ---
 NetlistGenerator:
@@ -68,7 +73,7 @@ NetlistGenerator:
 
     # --- 大元件的特殊規則 ---
     # 當元件面積大於此閾值時，視為「大元件」
-    large_comp_area_threshold: 1000.0
+    large_comp_area_threshold: 50000.0
 
     # 對於「大元件」，產生 >4 pin 的機率將大幅提升到這個值
     large_comp_high_pin_prob: 0.35 # 產生 >4 pin 元件的機率

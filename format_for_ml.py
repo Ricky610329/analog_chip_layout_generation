@@ -1,15 +1,5 @@
 # format_for_ml.py
 
-# -*- coding: utf-8 -*-
-"""
-此腳本用於將 `production.ipynb` 產生的佈局 JSON 資料，
-轉換為機器學習模型所需的格式。
-
-1. 將所有元件內容的中心點對齊到一個固定的 1000x1000 畫布的中心。
-2. 節點特徵 ('node') 使用元件的 [寬, 高] 尺寸，並基於 1000x1000 畫布進行正規化 。
-3. 座標 ('target') 和邊偏移 ('edge' offset) 也基於這個 1000x1000 的畫布進行正規化。
-"""
-
 import os
 import json
 import glob
@@ -17,25 +7,15 @@ import yaml
 from typing import List, Dict, Any, Tuple
 from collections import defaultdict
 
-# 遵循論文方法，我們需要一個固定的基準畫布尺寸來進行正規化
-TARGET_CANVAS_DIM = 1000.0
-
 def load_config(config_path: str = 'config.yaml') -> Dict[str, Any]:
-    """從指定的路徑載入 YAML 設定檔。"""
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"❌ 錯誤：找不到設定檔 '{config_path}'。")
-        return None
-    except yaml.YAMLError as e:
-        print(f"❌ 錯誤：解析 YAML 檔案 '{config_path}' 失敗: {e}")
+    except Exception as e:
+        print(f"❌ 設定檔讀取錯誤: {e}")
         return None
 
 def find_parent_component_index(pin_coords: Tuple[float, float], components: List[Dict[str, Any]]) -> int:
-    """
-    根據 pin 的絕對座標，在元件列表中找到其所屬的父元件索引。
-    """
     px, py = pin_coords
     for i, comp in enumerate(components):
         left = comp['x'] - comp['width'] / 2
@@ -46,53 +26,62 @@ def find_parent_component_index(pin_coords: Tuple[float, float], components: Lis
             return i
     return None
 
-def format_single_layout(input_path: str, output_path: str):
-    """
-    將單一的 layout.json 檔案轉換為 ML-ready 格式。
-    """
+def format_single_layout(input_path: str, output_path: str, target_canvas_dim: float):
     print(f"🔄 正在處理: {os.path.basename(input_path)}")
     
-    with open(input_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    try:
+        with open(input_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"❌ 讀取錯誤 {input_path}: {e}")
+        return
 
     leaf_components = data.get("final_leaf_components", [])
+    root_component = data.get("root_component", None)
+    
+    # ✨ [新增] 讀取原始資料中的 Seed 和 ID
+    seed_used = data.get("seed_used", "Unknown")
+    layout_id = data.get("layout_id", "Unknown")
+
     if not leaf_components:
-        print(f"⚠️ 警告：找不到 'final_leaf_components'，跳過此檔案。")
+        print(f"⚠️ 警告：無 final_leaf_components，跳過。")
         return
-        
+
     netlist_edges = data.get("netlist_edges", [])
 
-    # --- [功能1] 計算所有元件的內容邊界與中心 (使用原始座標) ---
-    min_x = min(comp['x'] - comp['width'] / 2 for comp in leaf_components)
-    max_x = max(comp['x'] + comp['width'] / 2 for comp in leaf_components)
-    min_y = min(comp['y'] - comp['height'] / 2 for comp in leaf_components)
-    max_y = max(comp['y'] + comp['height'] / 2 for comp in leaf_components)
-    content_center_x = (min_x + max_x) / 2
-    content_center_y = (min_y + max_y) / 2
+    # 1. 設定錨點
+    if root_component:
+        content_center_x = root_component['x']
+        content_center_y = root_component['y']
+    else:
+        # Fallback
+        min_x = min(comp['x'] - comp['width'] / 2 for comp in leaf_components)
+        max_x = max(comp['x'] + comp['width'] / 2 for comp in leaf_components)
+        min_y = min(comp['y'] - comp['height'] / 2 for comp in leaf_components)
+        max_y = max(comp['y'] + comp['height'] / 2 for comp in leaf_components)
+        content_center_x = (min_x + max_x) / 2
+        content_center_y = (min_y + max_y) / 2
     
+    # 2. 計算縮放因子
+    scale_factor = target_canvas_dim / 2.0
+    if scale_factor == 0: scale_factor = 1.0
+
     ml_nodes = []
     ml_targets = []
     ml_sub_components = []
     
-    # 遍歷所有元件
+    # 3. 正規化元件
     for comp in leaf_components:
-        # ✨ [修改] 遵循論文，對元件尺寸進行正規化 
-        # 使用 TARGET_CANVAS_DIM 作為正規化的基準
-        norm_w = comp['width'] / (TARGET_CANVAS_DIM / 2)
-        norm_h = comp['height'] / (TARGET_CANVAS_DIM / 2)
+        norm_w = comp['width'] / scale_factor
+        norm_h = comp['height'] / scale_factor
         ml_nodes.append([norm_w, norm_h])
 
-        # --- 座標處理 ---
-        # 1. 計算元件相對於內容中心的偏移
         shifted_x = comp['x'] - content_center_x
         shifted_y = comp['y'] - content_center_y
-        
-        # 2. 遵循論文，使用 TARGET_CANVAS_DIM 來正規化座標 
-        norm_x = shifted_x / (TARGET_CANVAS_DIM / 2)
-        norm_y = shifted_y / (TARGET_CANVAS_DIM / 2)
+        norm_x = shifted_x / scale_factor
+        norm_y = shifted_y / scale_factor
         ml_targets.append([norm_x, norm_y])
         
-        # sub_components 依然儲存原始絕對尺寸，供未來視覺化或還原使用
         ml_sub_components.append([
             {
                 "offset": [0.0, 0.0],
@@ -100,10 +89,12 @@ def format_single_layout(input_path: str, output_path: str):
             }
         ])
 
-    # 處理 edges
+    # 4. 正規化連線
     basic_component_edges = []
     for edge in netlist_edges:
-        src_pin_abs, dest_pin_abs = tuple(edge[0]), tuple(edge[1])
+        src_pin_abs = tuple(edge[0])
+        dest_pin_abs = tuple(edge[1])
+        
         src_comp_idx = find_parent_component_index(src_pin_abs, leaf_components)
         dest_comp_idx = find_parent_component_index(dest_pin_abs, leaf_components)
         
@@ -111,18 +102,17 @@ def format_single_layout(input_path: str, output_path: str):
             src_comp = leaf_components[src_comp_idx]
             dest_comp = leaf_components[dest_comp_idx]
             
-            # Pin的偏移量也必須基於新的目標畫布尺寸進行正規化，以保持座標系一致 
-            src_offset_x = (src_pin_abs[0] - src_comp['x']) / (TARGET_CANVAS_DIM / 2)
-            src_offset_y = (src_pin_abs[1] - src_comp['y']) / (TARGET_CANVAS_DIM / 2)
-            dest_offset_x = (dest_pin_abs[0] - dest_comp['x']) / (TARGET_CANVAS_DIM / 2)
-            dest_offset_y = (dest_pin_abs[1] - dest_comp['y']) / (TARGET_CANVAS_DIM / 2)
+            src_offset_x = (src_pin_abs[0] - src_comp['x']) / scale_factor
+            src_offset_y = (src_pin_abs[1] - src_comp['y']) / scale_factor
+            dest_offset_x = (dest_pin_abs[0] - dest_comp['x']) / scale_factor
+            dest_offset_y = (dest_pin_abs[1] - dest_comp['y']) / scale_factor
             
             basic_component_edges.append([
                 [src_comp_idx, dest_comp_idx],
                 [src_offset_x, src_offset_y, dest_offset_x, dest_offset_y]
             ])
 
-    # 處理對稱群組資訊
+    # 5. 對稱群組
     symmetry_groups_map = defaultdict(list)
     for i, comp in enumerate(leaf_components):
         group_id = comp.get("symmetric_group_id", -1)
@@ -130,8 +120,16 @@ def format_single_layout(input_path: str, output_path: str):
             symmetry_groups_map[group_id].append(i)
     ml_symmetry_groups = [indices for indices in symmetry_groups_map.values() if len(indices) == 2]
 
-    # 組合最終的 ML-ready JSON 物件
+    # 6. 儲存結果
     ml_data = {
+        "metadata": {
+            "normalization_mode": "fixed_canvas_from_config",
+            "target_canvas_dim": target_canvas_dim,
+            "scale_factor": scale_factor,
+            # ✨ [新增] 將 Seed 和 Layout ID 存入 Metadata
+            "seed_used": seed_used,
+            "layout_id": layout_id
+        },
         "node": ml_nodes,
         "target": ml_targets,
         "edges": { "basic_component_edge": basic_component_edges, "align_edge": [], "group_edge": [] },
@@ -139,44 +137,49 @@ def format_single_layout(input_path: str, output_path: str):
         "symmetry_groups": ml_symmetry_groups
     }
 
-    # 寫入檔案
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(ml_data, f, indent=2)
-        print(f"✅ 成功轉換並儲存至: {os.path.basename(output_path)}")
+        print(f"✅ 轉換成功: {os.path.basename(output_path)} (Seed: {seed_used})")
     except Exception as e:
-        print(f"❌ 寫入 {output_path} 時發生錯誤: {e}")
+        print(f"❌ 寫入錯誤: {e}")
 
 def main():
-    """主執行函式"""
-    print("--- 開始執行佈局資料轉換任務 (遵循論文方法) ---")
-    path_cfg = load_config().get('path_settings', {})
-    raw_dir, ml_dir = path_cfg.get('raw_output_directory'), path_cfg.get('ml_ready_output_directory')
+    config = load_config()
+    if not config: return
+
+    path_cfg = config.get('path_settings', {})
+    ml_cfg = config.get('ml_preparation', {})
+    target_canvas_dim = ml_cfg.get('target_canvas_dim', 1000.0)
+
+    print(f"--- 開始執行佈局資料正規化 (Target Canvas: {target_canvas_dim}) ---")
+
+    raw_dir = path_cfg.get('raw_output_directory')
+    ml_dir = path_cfg.get('ml_ready_output_directory')
     
     if not raw_dir or not ml_dir:
-        print("❌ 錯誤：config.yaml 中缺少路徑設定。")
+        print("❌ 錯誤：路徑設定遺失。")
         return
 
     input_folder = os.path.join(raw_dir, path_cfg.get('json_subdirectory', 'json_data'))
     os.makedirs(ml_dir, exist_ok=True)
+    
     input_files = glob.glob(os.path.join(input_folder, '*.json'))
-
+    
     if not input_files:
-        print(f"⚠️ 在 '{input_folder}' 中找不到任何 .json 檔案。")
+        print(f"⚠️ 找不到檔案。")
         return
-        
-    print(f"🔍 發現 {len(input_files)} 個檔案。")
-    print(f"🎨 將使用目標畫布尺寸: {TARGET_CANVAS_DIM}x{TARGET_CANVAS_DIM} 進行正規化。")
-    print("-" * 40)
 
+    print(f"🔍 發現 {len(input_files)} 個原始檔案。")
     for input_file_path in input_files:
         basename = os.path.basename(input_file_path).replace('.json', '')
-        output_filename = f"formatted_{basename.split('_')[-1]}.json"
+        suffix = basename.split('_')[-1]
+        output_filename = f"formatted_{suffix}.json"
         output_file_path = os.path.join(ml_dir, output_filename)
-        format_single_layout(input_file_path, output_file_path)
-        print("-" * 20)
+        
+        format_single_layout(input_file_path, output_file_path, target_canvas_dim)
 
-    print("✨ 所有檔案轉換完畢！ ✨")
+    print("✨ 正規化完成！現在請執行 format_visualization.py。 ✨")
 
 if __name__ == "__main__":
     main()
