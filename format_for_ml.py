@@ -38,8 +38,6 @@ def format_single_layout(input_path: str, output_path: str, target_canvas_dim: f
 
     leaf_components = data.get("final_leaf_components", [])
     root_component = data.get("root_component", None)
-    
-    # ✨ [新增] 讀取原始資料中的 Seed 和 ID
     seed_used = data.get("seed_used", "Unknown")
     layout_id = data.get("layout_id", "Unknown")
 
@@ -54,7 +52,6 @@ def format_single_layout(input_path: str, output_path: str, target_canvas_dim: f
         content_center_x = root_component['x']
         content_center_y = root_component['y']
     else:
-        # Fallback
         min_x = min(comp['x'] - comp['width'] / 2 for comp in leaf_components)
         max_x = max(comp['x'] + comp['width'] / 2 for comp in leaf_components)
         min_y = min(comp['y'] - comp['height'] / 2 for comp in leaf_components)
@@ -112,13 +109,25 @@ def format_single_layout(input_path: str, output_path: str, target_canvas_dim: f
                 [src_offset_x, src_offset_y, dest_offset_x, dest_offset_y]
             ])
 
-    # 5. 對稱群組
-    symmetry_groups_map = defaultdict(list)
+    # 5. 處理對稱群組 (含軸向資訊)
+    # ✨ [修改] 收集軸向資訊
+    # 結構: {group_id: {'indices': [i1, i2], 'axis': 'vertical'}}
+    symmetry_groups_data = defaultdict(lambda: {'indices': [], 'axis': None})
+    
     for i, comp in enumerate(leaf_components):
         group_id = comp.get("symmetric_group_id", -1)
         if group_id != -1:
-            symmetry_groups_map[group_id].append(i)
-    ml_symmetry_groups = [indices for indices in symmetry_groups_map.values() if len(indices) == 2]
+            symmetry_groups_data[group_id]['indices'].append(i)
+            if not symmetry_groups_data[group_id]['axis']:
+                symmetry_groups_data[group_id]['axis'] = comp.get("symmetry_axis")
+
+    # 轉換為 ML 格式: [[idx1, idx2, "vertical"], ...]
+    ml_symmetry_groups = []
+    for gid, data in symmetry_groups_data.items():
+        if len(data['indices']) == 2:
+            # 如果 axis 是 None，預設為 vertical (最常見)
+            axis = data['axis'] if data['axis'] else "vertical" 
+            ml_symmetry_groups.append([data['indices'][0], data['indices'][1], axis])
 
     # 6. 儲存結果
     ml_data = {
@@ -126,7 +135,6 @@ def format_single_layout(input_path: str, output_path: str, target_canvas_dim: f
             "normalization_mode": "fixed_canvas_from_config",
             "target_canvas_dim": target_canvas_dim,
             "scale_factor": scale_factor,
-            # ✨ [新增] 將 Seed 和 Layout ID 存入 Metadata
             "seed_used": seed_used,
             "layout_id": layout_id
         },
@@ -134,13 +142,13 @@ def format_single_layout(input_path: str, output_path: str, target_canvas_dim: f
         "target": ml_targets,
         "edges": { "basic_component_edge": basic_component_edges, "align_edge": [], "group_edge": [] },
         "sub_components": ml_sub_components,
-        "symmetry_groups": ml_symmetry_groups
+        "symmetry_groups": ml_symmetry_groups # 包含軸向
     }
 
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(ml_data, f, indent=2)
-        print(f"✅ 轉換成功: {os.path.basename(output_path)} (Seed: {seed_used})")
+        print(f"✅ 轉換成功: {os.path.basename(output_path)} (Symmetry Groups: {len(ml_symmetry_groups)})")
     except Exception as e:
         print(f"❌ 寫入錯誤: {e}")
 
@@ -179,7 +187,7 @@ def main():
         
         format_single_layout(input_file_path, output_file_path, target_canvas_dim)
 
-    print("✨ 正規化完成！現在請執行 format_visualization.py。 ✨")
+    print("✨ 正規化完成 (含對稱軸資訊)！ ✨")
 
 if __name__ == "__main__":
     main()

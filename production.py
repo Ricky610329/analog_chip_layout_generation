@@ -406,19 +406,20 @@ class Level_1:
         self.level = 1
 
     def _apply_adaptive_symmetric_split(self, parent_component: Component) -> List[Component]:
-        """
-        [新版] 執行三明治切割，並保留中間元件，形成三元對稱結構。
-        """
         parent_w = parent_component.width
         parent_h = parent_component.height
         target_ratio = self.adaptive_symmetric_target_ratio
 
+        # Case 1: 寬元件 -> 垂直切割 (產生左右兩個) -> 標記為 Horizontal
         if parent_component.w_h_ratio() > 1:
             ideal_child_w = parent_h * target_ratio
             if (parent_w / 2) > ideal_child_w and (1 - 2 * (ideal_child_w / parent_w)) > 0:
                 ratio = ideal_child_w / parent_w
                 sub_components = split_by_ratio(parent_component, [ratio, 1 - 2 * ratio, ratio], SplitOrientation.VERTICAL)
                 if len(sub_components) == 3:
+                    sub_components[0].symmetry_axis = "horizontal"
+                    sub_components[2].symmetry_axis = "horizontal"
+
                     center_comp = sub_components[1]
                     aspect_ratio = max(center_comp.width, center_comp.height) / min(center_comp.width, center_comp.height)
                     
@@ -432,12 +433,16 @@ class Level_1:
                         sub_components[1].generate_rule = "symmetric_adaptive_center"
                         return sub_components
             
+        # Case 2: 高元件 -> 水平切割 (產生上下兩個) -> 標記為 Vertical
         elif parent_component.w_h_ratio() < 1:
             ideal_child_h = parent_w * target_ratio
             if (parent_h / 2) > ideal_child_h and (1 - 2 * (ideal_child_h / parent_h)) > 0:
                 ratio = ideal_child_h / parent_h
                 sub_components = split_by_ratio(parent_component, [ratio, 1 - 2 * ratio, ratio], SplitOrientation.HORIZONTAL)
                 if len(sub_components) == 3:
+                    sub_components[0].symmetry_axis = "vertical"
+                    sub_components[2].symmetry_axis = "vertical"
+
                     center_comp = sub_components[1]
                     aspect_ratio = max(center_comp.width, center_comp.height) / min(center_comp.width, center_comp.height)
                     if aspect_ratio > 3:
@@ -450,6 +455,7 @@ class Level_1:
                         sub_components[1].generate_rule = "symmetric_adaptive_center"
                         return sub_components
 
+        # Fallback: 基礎對稱分割 (symmetric_1.py 已經修改過，會自動帶入標籤)
         if parent_component.w_h_ratio() > 1:
             return split_symmetric_1_horizontal(parent_component) 
         else:
@@ -981,6 +987,7 @@ def component_to_dict(component: Component) -> Dict[str, Any]:
         "relation_id": component.relation_id,
         "generate_rule": component.generate_rule,
         "symmetric_group_id": component.symmetric_group_id,
+        "symmetry_axis": component.symmetry_axis, 
         "sub_components": sub_components_list
     }
 
