@@ -13,6 +13,7 @@ def split_symmetric_1_vertical(
 
     for comp in components:
         comp.generate_rule = "symmetric_1"
+        comp.symmetry_axis = "vertical"
 
     return components
 
@@ -25,5 +26,6 @@ def split_symmetric_1_horizontal(
 
     for comp in components:
         comp.generate_rule = "symmetric_1"
+        comp.symmetry_axis = "horizontal"
 
     return components
